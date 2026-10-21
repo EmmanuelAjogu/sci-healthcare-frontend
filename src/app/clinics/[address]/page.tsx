@@ -237,9 +237,12 @@ export default function ClinicPage({
     wallet !== null && baseAmount !== null && walletBalance !== null && insufficientUsdcBalance;
   const usdcShortfall =
     missingUsdcForFunding ? baseAmount - walletBalance : null;
-  const sponsorAmount = useMemo(() => {
-    try { return toBaseUnits(amount); } catch { return 0n; }
-  }, [amount]);
+  let sponsorAmount = 0n;
+  try {
+    sponsorAmount = toBaseUnits(amount);
+  } catch {
+    // Incomplete/invalid amounts cannot opt into sponsorship.
+  }
   const canSponsor = sponsorshipAvailable() && selectedServices.length === 1 &&
     sponsorAmount > 0n && sponsorAmount <= SPONSOR_MAX_AMOUNT &&
     walletBalance !== null && walletBalance >= sponsorAmount;

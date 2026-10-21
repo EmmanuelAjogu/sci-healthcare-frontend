@@ -4,7 +4,6 @@ import { toBaseUnits } from './amounts';
 import { config } from './config';
 import { isMockRpc, mockRpcDelayMs, recordMockCall } from './e2e-seam';
 import { beginPendingTransaction } from './pending-tx';
-import { requireSponsorship, sponsorTransaction } from './sponsorship';
 
 /**
  * Stellar SDK access.
@@ -351,14 +350,17 @@ async function invoke(
   sign: SignFn,
   sponsored = false,
 ): Promise<{ hash: string; returnValue: unknown }> {
+  let sponsor: typeof import('./sponsorship') | undefined;
   if (sponsored) {
+    // Keep fee-bump validation off the ordinary wallet/read-page bundle.
+    sponsor = await import('./sponsorship');
     if (contractId !== config.contracts.voucher || method !== 'create_voucher' || args.length !== 6) {
       throw new Error('Only voucher funding can use sponsored fees.');
     }
     const { scValToNative } = await loadSdk();
     const amount: unknown = scValToNative(args[4]);
     if (typeof amount !== 'bigint') throw new Error('Invalid sponsored voucher amount.');
-    requireSponsorship(amount);
+    sponsor.requireSponsorship(amount);
   }
   // Playwright end-to-end tests (see e2e-seam.ts): record the invocation and
   // return a canned submission instead of building, simulating and sending
@@ -397,8 +399,8 @@ async function invoke(
   // auth entries. Submitting without this fails with a resource error.
   const prepared = rpc.assembleTransaction(built, sim).build();
 
-  const signed = sponsored
-    ? await sponsorTransaction(prepared, sign)
+  const signed = sponsor
+    ? await sponsor.sponsorTransaction(prepared, sign)
     : TransactionBuilder.fromXDR(await sign(prepared.toXDR()), config.networkPassphrase);
 
   const sent = await server.sendTransaction(signed);
