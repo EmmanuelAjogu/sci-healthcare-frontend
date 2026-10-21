@@ -4,6 +4,7 @@ import { toBaseUnits } from './amounts';
 import { config } from './config';
 import { isMockRpc, mockRpcDelayMs, recordMockCall } from './e2e-seam';
 import { beginPendingTransaction } from './pending-tx';
+import { requireSponsorship, sponsorTransaction } from './sponsorship';
 
 /**
  * Stellar SDK access.
@@ -303,13 +304,14 @@ export async function invokeContract(
   args: xdr.ScVal[],
   walletAddress: string,
   sign: SignFn,
+  sponsored = false,
 ): Promise<{ hash: string; returnValue: unknown }> {
   // The whole round trip counts as pending: while it runs, the app warns
   // before the tab is closed or reloaded (see pending-tx.ts and
   // PendingTransactionGuard).
   const finish = beginPendingTransaction();
   try {
-    return await invoke(contractId, method, args, walletAddress, sign);
+    return await invoke(contractId, method, args, walletAddress, sign, sponsored);
   } finally {
     finish();
   }
@@ -347,13 +349,23 @@ async function invoke(
   args: xdr.ScVal[],
   walletAddress: string,
   sign: SignFn,
+  sponsored = false,
 ): Promise<{ hash: string; returnValue: unknown }> {
+  if (sponsored) {
+    if (contractId !== config.contracts.voucher || method !== 'create_voucher' || args.length !== 6) {
+      throw new Error('Only voucher funding can use sponsored fees.');
+    }
+    const { scValToNative } = await loadSdk();
+    const amount: unknown = scValToNative(args[4]);
+    if (typeof amount !== 'bigint') throw new Error('Invalid sponsored voucher amount.');
+    requireSponsorship(amount);
+  }
   // Playwright end-to-end tests (see e2e-seam.ts): record the invocation and
   // return a canned submission instead of building, simulating and sending
   // a real transaction. Crafting Soroban simulation payloads over HTTP
   // would couple the tests to SDK internals; this keeps the same
   // `{ hash, returnValue }` shape the UI consumes.
-  if (isMockRpc()) {
+  if (isMockRpc() && !sponsored) {
     recordMockCall({ kind: 'invoke', contractId, method }, recordArgs(args));
     // A test can keep a write in flight to observe the unload guard.
     const delay = mockRpcDelayMs();
@@ -385,8 +397,9 @@ async function invoke(
   // auth entries. Submitting without this fails with a resource error.
   const prepared = rpc.assembleTransaction(built, sim).build();
 
-  const signedXdr = await sign(prepared.toXDR());
-  const signed = TransactionBuilder.fromXDR(signedXdr, config.networkPassphrase);
+  const signed = sponsored
+    ? await sponsorTransaction(prepared, sign)
+    : TransactionBuilder.fromXDR(await sign(prepared.toXDR()), config.networkPassphrase);
 
   const sent = await server.sendTransaction(signed);
   if (sent.status === 'ERROR') {

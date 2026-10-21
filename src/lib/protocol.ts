@@ -62,6 +62,7 @@ export const voucher = {
       expiresAt: number;
     },
     sign: SignFn,
+    sponsored = false,
   ) {
     const client = getVoucherClient();
     const clean = params.beneficiaryRef.startsWith('0x')
@@ -81,6 +82,7 @@ export const voucher = {
       args,
       params.funder,
       sign,
+      sponsored,
     );
   },
 
