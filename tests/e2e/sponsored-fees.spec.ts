@@ -13,11 +13,15 @@ test('sponsorship is opt-in, has amount limits and never silently changes to sel
   const checkbox = page.getByRole('checkbox', { name: 'Request sponsored fees' });
   await expect(checkbox).not.toBeChecked();
   await expect(checkbox).toBeEnabled();
+  const mobilePayment = page.getByText('Pay from a mobile wallet', { exact: true });
+  await expect(mobilePayment).toBeVisible();
   await checkbox.check();
+  await expect(mobilePayment).toBeHidden();
   await page.screenshot({ path: testInfo.outputPath('sponsored-fees.png'), fullPage: true });
   await page.getByLabel('Amount (USDC)', { exact: false }).fill('101');
   await expect(checkbox).toBeChecked();
   await checkbox.uncheck();
+  await expect(mobilePayment).toBeVisible();
   await expect(checkbox).toBeDisabled();
   await page.getByLabel('Amount (USDC)', { exact: false }).fill('3');
   await expect(checkbox).toBeEnabled();
